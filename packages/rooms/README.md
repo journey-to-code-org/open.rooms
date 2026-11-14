@@ -42,6 +42,29 @@ room.onChat((messages) => render(messages));   // the table's chat, oldest first
 await room.say("good luck ♠️");                 // seated players; rooms.say(id, seat, text) on the server, for bots
 ```
 
+## Bots that take a while
+
+`bot` is called on the server's one thread, which is fine for a move that's quick to find. For one
+that isn't, give the room `think` as well: it is asked in `bot`'s place and may answer later.
+
+```ts
+think: (state, seat, name, settings, { signal, table }) =>
+  state.turn !== seat ? null                    // not this seat's move: say so at once
+  : pool.think({ state, seat }, { signal, table }), // a promise of the move (a worker thread, say)
+```
+
+- **The pause hides the think.** The room asks as the bot's pause (`botDelay`) begins and plays
+  the move when both are done, so a think shorter than the pause costs the table nothing.
+- **Only on the state it was for.** If the game moved on while the bot thought (someone moved, a
+  deadline fired), the answer is dropped and the bot is asked again about the table as it is now,
+  with no second pause. If the bot was stopped (the game finished, the settings changed, its seat
+  changed hands, the table was closed, the server restarted), the answer is dropped and that's all.
+  `signal` aborts either way, for a think that can be cancelled.
+- **Still a move like any other.** It goes through `act` and into the move log.
+- A deadline's `move()` is still worked out there and then, on the server's thread: it never waits
+  behind anyone's think. A promise that rejects (or resolves `null`) is logged and leaves the seat
+  waiting; resolve a move, whatever happens.
+
 ## Deadlines
 
 A room waits for its seats for ever unless its definition has a `deadline`: by when, and the move
