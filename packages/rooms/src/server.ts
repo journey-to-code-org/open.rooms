@@ -46,6 +46,21 @@ export interface RoomDefinition<State, Move, View, Options, Summary = unknown> {
   settings?(given: unknown): unknown;
   /** A bot's move for a seat, or null when it isn't that seat's move. `name` is the bot's name in that seat. */
   bot?(state: State, seat: number, name: string, settings?: any): Move | null;
+  /**
+   * `bot`, for a game whose computer players can take a while: the same move, worked out somewhere
+   * that doesn't hold up every other table (a worker thread, say). When a room has it, its bots are
+   * asked here and `bot` is left to whoever else wants a move at once (a deadline's timeout move).
+   *
+   * Return null, at once, when it isn't that seat's move; otherwise the move, or a promise of it.
+   * The room starts the think as the bot's pause begins and plays the move when both are done, so a
+   * think shorter than the pause costs the table no time at all. A promised move is only ever played
+   * on the state it was asked for: if the game has moved on by the time it arrives (someone else
+   * moved, a deadline fired) it is dropped and the seat is asked again, and if the bot was stopped
+   * meanwhile (the settings changed, the seat changed hands, the game ended, the table closed) it is
+   * dropped and that's that. `thinking.signal` aborts when the room no longer wants the answer.
+   * A promise that resolves null, or rejects, leaves the seat waiting: resolve a move.
+   */
+  think?(state: State, seat: number, name: string, settings: any, thinking: Thinking): Move | null | Promise<Move | null>;
   /** Whether the game is over. Finished rooms are dropped from memory (the log keeps them). */
   finished?(state: State): boolean;
   /** How long (ms) a bot takes over its move, so bots feel like people. Default 700. */
@@ -58,6 +73,14 @@ export interface RoomDefinition<State, Move, View, Options, Summary = unknown> {
    * gets them from `act`'s `time`.
    */
   deadline?(state: State, table: TableInfo): Deadline<Move> | null;
+}
+
+/** What a think is told besides the position (see RoomDefinition.think). */
+export interface Thinking {
+  /** Aborts when the room has stopped waiting for this answer: there's no need to finish working it out. */
+  signal: AbortSignal;
+  /** The room's id, for sharing thinking time fairly between tables. */
+  table: string;
 }
 
 /** When a move was decided. */
@@ -200,11 +223,26 @@ interface Armed {
   timer: ReturnType<typeof setTimeout> | null;
 }
 
+/** A bot's move in the making: the pause that makes it feel like a person, and the think behind it. */
+interface Turn<State, Move> {
+  seat: number;
+  name: string;
+  settings: unknown;
+  /** The state the answer is for. An answer is only ever played on this very state. */
+  state: State;
+  /** The move, or a promise of it from `think`. */
+  answer: Move | Promise<Move | null>;
+  /** Tells `think` the answer isn't wanted any more. */
+  stop: AbortController;
+}
+
 interface Live<State> {
   state: State | null;
   moves: number;
   version: number;
-  /** The bot that's thinking. */
+  /** The bot that's about to move: pausing, thinking or both. One at a time. */
+  bot: Turn<State, any> | null;
+  /** That bot's pause, while it runs. */
   timer: ReturnType<typeof setTimeout> | null;
   /** When the last move was decided (or the game dealt): where `elapsed` and `after` count from. */
   last: number;
@@ -354,7 +392,7 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
   async function restore(id: string): Promise<Live<State>> {
     const r = await room(id);
     const g = await game(id);
-    const entry: Live<State> = { state: null, moves: 0, version: r?.version ?? 0, timer: null, last: Date.now(), table: tableOf(r, g), deadline: null };
+    const entry: Live<State> = { state: null, moves: 0, version: r?.version ?? 0, bot: null, timer: null, last: Date.now(), table: tableOf(r, g), deadline: null };
     if (g?.seed != null) {
       // A game dealt before moves had times starts its clock now, for good: writing it down means
       // every later replay counts from the same moment.
@@ -547,10 +585,7 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
     if (r.closed) return true; // nothing plays on at a closed table
     const entry = await stateOf(id);
     entry.table = { ...entry.table, seats };
-    if (entry.timer) {
-      clearTimeout(entry.timer);
-      entry.timer = null;
-    }
+    stopBot(entry);
     // A clock that was running on the person isn't the bot's: work it out again.
     if (def.deadline && entry.state !== null) {
       const before = deadlineDoc(entry);
@@ -615,7 +650,7 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
     if (!(await room(id))) return false;
     await sync.write("rooms", id, { closed: reason.replace(/\s+/g, " ").trim().slice(0, 200) || "This table was closed." });
     const entry = live.get(id);
-    if (entry?.timer) clearTimeout(entry.timer);
+    if (entry) stopBot(entry);
     live.delete(id);
     return true;
   }
@@ -650,7 +685,7 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
   /** A finished game no longer needs its state in memory: a later request replays it from the log. */
   function forgetIfFinished(id: string, entry: Live<State>): boolean {
     if (entry.state === null || !def.finished?.(entry.state)) return false;
-    if (entry.timer) clearTimeout(entry.timer);
+    stopBot(entry);
     disarm(entry);
     live.delete(id);
     return true;
@@ -700,35 +735,102 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
     if (r) safely(() => options.onMove!({ id, before, after, seat, move, room: r, ...(timeout ? { timeout } : {}) }));
   }
 
-  /** If it's a bot's move, make it after a pause. */
+  /** Stop the bot that's about to move, whatever it was doing: its pause ends and its answer, if one is still coming, is dropped. */
+  function stopBot(entry: Live<State>) {
+    if (entry.timer) clearTimeout(entry.timer);
+    entry.timer = null;
+    entry.bot?.stop.abort();
+    entry.bot = null;
+  }
+
+  /** Ask for a bot's move: from `think` when the room has one (it may answer later), else from `bot`. */
+  const ask = (id: string, state: State, seat: number, name: string, settings: unknown, stop: AbortController): Move | null | Promise<Move | null> =>
+    def.think ? def.think(state, seat, name, settings, { signal: stop.signal, table: id }) : def.bot!(state, seat, name, settings);
+  const later = (answer: unknown): answer is Promise<Move | null> => typeof (answer as { then?: unknown } | null)?.then === "function";
+
+  /**
+   * If it's a bot's move, make it after a pause. The think starts as the pause does, so a think
+   * that takes a while (see RoomDefinition.think) hides inside the pause instead of adding to it.
+   */
   async function driveBots(id: string) {
     const entry = await stateOf(id);
-    if (!def.bot || entry.state === null || entry.timer) return;
+    if ((!def.bot && !def.think) || entry.state === null || entry.bot) return;
     const current = await room(id);
     if (current?.closed) return;
     const seats = current?.seats ?? [];
     // A room from before it had settings plays with the defaults.
     const settings = (await game(id))?.settings ?? def.settings?.(undefined);
-    if (entry.timer) return; // set while this was reading
+    if (entry.bot) return; // set while this was reading
     for (let seat = 0; seat < seats.length; seat++) {
       if (!seats[seat]?.bot) continue;
-      const botName = seats[seat]!.name ?? "";
-      if (def.bot(entry.state, seat, botName, settings) === null) continue;
-      const delay = fixedDelay ?? def.botDelay?.(entry.state, seat, botName, settings) ?? 700;
-      entry.timer = setTimeout(async () => {
+      const name = seats[seat]!.name ?? "";
+      const stop = new AbortController();
+      const answer = ask(id, entry.state, seat, name, settings, stop);
+      if (answer === null) continue;
+      const delay = fixedDelay ?? def.botDelay?.(entry.state, seat, name, settings) ?? 700;
+      const turn: Turn<State, Move> = { seat, name, settings, state: entry.state, answer, stop };
+      // An answer that fails is reported when the pause ends; until then it mustn't count as unhandled.
+      if (later(answer)) answer.catch(() => {});
+      entry.bot = turn;
+      entry.timer = setTimeout(() => {
         entry.timer = null;
-        const move = entry.state === null ? null : def.bot!(entry.state, seat, botName, settings);
-        // The game moved on while this bot was thinking (a deadline's move, say): see whose move it is now.
-        if (move === null) return void (live.get(id) === entry && driveBots(id));
-        let before: State;
-        try {
-          before = apply(id, entry, seat, move);
-        } catch (e) {
-          console.error(`rooms: bot in ${id} seat ${seat} made a refused move`, e);
-          return;
-        }
-        await settle(id, entry, before, seat, move);
+        void play(id, entry, turn);
       }, delay);
+      return;
+    }
+  }
+
+  /**
+   * A bot's pause is over: play its move, on the state it was worked out for and no other. A pause
+   * isn't restarted because someone else moved meanwhile (in a race, a quick person mustn't keep
+   * resetting the computer's clock): the move is worked out again from the table as it is now, and
+   * played as soon as it's known.
+   */
+  async function play(id: string, entry: Live<State>, turn: Turn<State, Move>) {
+    for (;;) {
+      if (entry.bot !== turn || entry.state === null) return; // stopped: nobody wants this move any more
+      if (entry.state !== turn.state) {
+        turn.stop.abort();
+        turn.stop = new AbortController();
+        turn.state = entry.state;
+        try {
+          const answer = ask(id, turn.state, turn.seat, turn.name, turn.settings, turn.stop);
+          // Not this seat's move any more: see whose it is now.
+          if (answer === null) return void ((entry.bot = null), live.get(id) === entry && driveBots(id));
+          turn.answer = answer;
+        } catch (e) {
+          console.error(`rooms: the bot in ${id} seat ${turn.seat} couldn't think`, e);
+          return void (entry.bot = null);
+        }
+      }
+      const state = turn.state;
+      let move = turn.answer as Move | null;
+      if (later(turn.answer)) {
+        try {
+          move = await turn.answer;
+        } catch (e) {
+          if (entry.bot !== turn) return;
+          console.error(`rooms: the bot in ${id} seat ${turn.seat} couldn't think`, e);
+          return void (entry.bot = null);
+        }
+        if (entry.bot !== turn) return; // stopped while it was thinking: the answer is dropped
+        // The game moved on while it was thinking (a person moved, a deadline's move): the answer
+        // was for a table that's gone. Drop it and ask again.
+        if (entry.state !== state) continue;
+        if (move === null) {
+          console.error(`rooms: the bot in ${id} seat ${turn.seat} had a move to make and then made none`);
+          return void (entry.bot = null);
+        }
+      }
+      entry.bot = null;
+      let before: State;
+      try {
+        before = apply(id, entry, turn.seat, move as Move);
+      } catch (e) {
+        console.error(`rooms: bot in ${id} seat ${turn.seat} made a refused move`, e);
+        return;
+      }
+      await settle(id, entry, before, turn.seat, move as Move);
       return;
     }
   }
@@ -809,10 +911,7 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
       await sync.write("games", id, { settings });
       await sync.write("rooms", id, { settings });
       const entry = live.get(id);
-      if (entry?.timer) {
-        clearTimeout(entry.timer);
-        entry.timer = null;
-      }
+      if (entry) stopBot(entry);
       // A deadline may depend on the settings (a turn timer): work it out again. The clock isn't
       // restarted, or changing a setting would be a way to stall.
       if (entry && def.deadline && entry.state !== null) {
@@ -939,7 +1038,7 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
     /** Stop bot timers and deadlines (for tests and shutdown). */
     close() {
       for (const entry of live.values()) {
-        if (entry.timer) clearTimeout(entry.timer);
+        stopBot(entry);
         disarm(entry);
       }
     },
