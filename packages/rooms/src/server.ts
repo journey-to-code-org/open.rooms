@@ -178,6 +178,11 @@ export interface RoomDoc<Summary = unknown> {
   summary: Summary | null;
   /** The clock that's running, if the game has one (see RoomDefinition.deadline). */
   deadline?: DeadlineDoc | null;
+  /**
+   * When the last move was decided (server time, ms), in a room with deadlines: where a clock the
+   * game keeps in its own state (a chess clock's two banks) has been running from.
+   */
+  moved?: number;
   version: number;
 }
 
@@ -708,7 +713,7 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
       sync.write("rooms", id, {
         started: entry.state !== null,
         summary: entry.state !== null && def.summary ? def.summary(entry.state) : null,
-        ...(def.deadline ? { deadline } : {}),
+        ...(def.deadline ? { deadline, moved: entry.last } : {}),
         version: entry.version,
       }),
     );
