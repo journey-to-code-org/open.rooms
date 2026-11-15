@@ -1,0 +1,82 @@
+# Releases to npm when a package's version reaches main: any package whose version isn't on npm
+# yet is published, in the order they depend on each other (scripts/publish.mjs), with provenance,
+# and then each package published gets a tag (`rooms-v0.1.1`) and a GitHub release with generated
+# notes. Pushes that don't change a version do nothing. The build, types and tests run first, so a
+# broken main publishes nothing.
+#
+# It can be run again from the Actions tab, on main only. A package already on npm is skipped, and
+# a version that has no GitHub release yet is given one, so re-running finishes whatever is missing.
+#
+# No npm token is stored: npm trusts this workflow (OIDC). Set up once per package on npmjs.com:
+# Settings → Trusted publishing → GitHub Actions, organization `journey-to-code-org`, repository
+# `open.rooms`, workflow `release.yml`, environment `release`. A new package can't be set up until
+# it exists: publish its first version by hand, then add it. An NPM_TOKEN secret is used instead,
+# if there is one. The `release` environment can be limited to main in the repository's settings.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One release at a time, and never cancelled halfway through a publish.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  release:
+    name: Publish and release
+    if: github.ref == 'refs/heads/main'
+    environment: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # the tags and the releases
+      id-token: write # trusted publishing, and npm's provenance
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # to find the commit that set each version
+      # No registry-url: setup-node would then set NODE_AUTH_TOKEN, which overrides trusted publishing.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      # Trusted publishing needs npm 11.5.1 or later.
+      - run: npm install -g npm@11
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm test
+      - name: Use an npm token, if there is one
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > "$HOME/.npmrc"
+          fi
+      - name: Publish to npm
+        id: publish
+        run: node scripts/publish.mjs
+      - name: Tag and release what is on npm
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASED: ${{ steps.publish.outputs.released }}
+        run: |
+          while read -r short version; do
+            [ -n "$short" ] || continue
+            tag="$short-v$version"
+            if gh release view "$tag" > /dev/null 2>&1; then
+              echo "$tag is released."
+              continue
+            fi
+            # The commit that set this version, walking back along main.
+            sha=$(git log --first-parent --format=%H -1 -S"\"version\": \"$version\"" -- "packages/$short/package.json")
+            name=$(node -p "require('./packages/$short/package.json').name")
+            echo "Releasing $name $version from ${sha:?no commit set $name to $version}."
+            gh release create "$tag" --target "$sha" --title "$name $version" --generate-notes \
+              $(case "$version" in *-*) echo --prerelease --latest=false;; esac)
+          done <<< "$RELEASED"
