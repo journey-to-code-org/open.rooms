@@ -1,3 +1,7 @@
+---
+order: 7
+---
+
 # Releasing
 
 Merging a version bump to `main` publishes it to npm. Nothing is run by hand.

@@ -1,0 +1,22 @@
+{
+  "format": "openblog-landing",
+  "version": 1,
+  "sections": [
+    {
+      "id": "welcome",
+      "type": "welcome",
+      "heading": "open.rooms",
+      "subheading": "Realtime multiplayer rooms for turn-based games. Seats, moves the server decides, a private view per seat, bots and a move log.",
+      "button": {
+        "label": "Read the docs",
+        "href": "/docs/",
+        "style": "primary"
+      }
+    },
+    {
+      "id": "start",
+      "type": "rich-text",
+      "markdown": "New here? Start with [Getting started](/docs/getting-started/). Building with an agent? See [For agents](/docs/agents/). Defining a game's bots and clocks? [Bots and deadlines](/docs/bots-and-deadlines/)."
+    }
+  ]
+}

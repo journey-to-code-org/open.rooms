@@ -1,0 +1,82 @@
+name: Docs
+
+# The pages in docs/ are built with open.blog (docs-site/ is the project) and published to
+# GitHub Pages. Pull requests build and check them; only main publishes.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "docs-site/**"
+      - "scripts/build-docs-site.mjs"
+      - ".github/workflows/docs-pages.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "docs-site/**"
+      - "scripts/build-docs-site.mjs"
+      - ".github/workflows/docs-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-pages-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # open.blog's documentation sections are not in a tagged release yet, so the build is pinned to a
+  # commit. To update the engine, change this to a newer commit and check the docs still build.
+  OPENBLOG_REF: 1b1a87ab34d61588b2b435ee1694ea647eac3012
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out open.blog
+        uses: actions/checkout@v4
+        with:
+          repository: journey-to-code-org/open.blog
+          ref: ${{ env.OPENBLOG_REF }}
+          path: .open.blog
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .open.blog
+
+      - name: Build the open.blog command
+        working-directory: .open.blog
+        run: cargo build --release -p openblog-cli
+
+      - name: Fill docs-site/content/docs from docs/
+        run: node scripts/build-docs-site.mjs
+
+      - name: Build the site
+        run: .open.blog/target/release/openblog build --root docs-site
+
+      - uses: actions/configure-pages@v5
+        if: github.ref == 'refs/heads/main'
+
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          path: docs-site/dist
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

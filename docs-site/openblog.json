@@ -1,0 +1,61 @@
+{
+  "title": "open.rooms",
+  "description": "Realtime multiplayer rooms for turn-based games: seats, server-decided moves, private views per seat, bots and a move log.",
+  "url": "https://journey-to-code-org.github.io/open.rooms/",
+  "ogImage": "/og.png",
+  "author": {
+    "name": "Mikey Nichols",
+    "url": "https://github.com/journey-to-code-org"
+  },
+  "nav": [
+    {
+      "label": "Docs",
+      "href": "/docs/"
+    },
+    {
+      "label": "Getting started",
+      "href": "/docs/getting-started/"
+    },
+    {
+      "label": "For agents",
+      "href": "/docs/agents/"
+    },
+    {
+      "label": "Search",
+      "href": "/search/"
+    }
+  ],
+  "social": [
+    {
+      "label": "GitHub",
+      "href": "https://github.com/journey-to-code-org/open.rooms"
+    }
+  ],
+  "footer": "open.rooms is open source (MIT). These pages are built with open.blog from the repository's docs/ folder.",
+  "feeds": {
+    "rss": false,
+    "json": false,
+    "sitemap": true,
+    "llms": true,
+    "portfolioSnapshot": false
+  },
+  "analytics": {
+    "builtin": false,
+    "showViews": false
+  },
+  "share": {
+    "enabled": false
+  },
+  "docs": {
+    "enabled": true,
+    "title": "open.rooms",
+    "source": "https://github.com/journey-to-code-org/open.rooms/blob/main/docs/"
+  },
+  "paths": {
+    "content": "content",
+    "static": "static",
+    "output": "dist",
+    "themes": "../.open.blog/themes",
+    "web": "../.open.blog/web"
+  }
+}

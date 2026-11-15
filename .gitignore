@@ -3,3 +3,8 @@ dist/
 coverage/
 *.log
 .DS_Store
+
+# documentation site
+docs-site/content/docs
+docs-site/dist
+.open.blog
