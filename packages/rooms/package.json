@@ -1,5 +1,5 @@
 {
-  "name": "@spades/rooms",
+  "name": "@journey-to-code/rooms",
   "version": "0.1.0",
   "private": true,
   "description": "Turn-based rooms over @zubra/sync: seats, server-decided moves, private per-seat views, bots and a move log.",

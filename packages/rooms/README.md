@@ -1,4 +1,4 @@
-# @spades/rooms
+# @journey-to-code/rooms
 
 Turn-based rooms over [`@zubra/sync`](https://github.com/journey-to-code-org/zubra/blob/main/docs/sync.md):
 seats, moves the server decides, a private view per seat, bots, and a move log. Nothing in it is
@@ -9,7 +9,7 @@ It lives here while spades shapes its API, and moves to its own repository once 
 ## Defining a room
 
 ```ts
-import { createRooms, RefusedMove } from "@spades/rooms/server";
+import { createRooms, RefusedMove } from "@journey-to-code/rooms/server";
 
 const rooms = createRooms({
   seats: 4,
@@ -30,7 +30,7 @@ http.createServer(async (req, res) => { if (!(await rooms.handle(req, res))) ser
 ## In the browser
 
 ```ts
-import { createRoom, openRoom } from "@spades/rooms/client";
+import { createRoom, openRoom } from "@journey-to-code/rooms/client";
 
 const id = await createRoom(houseRules);
 const room = openRoom(id);
