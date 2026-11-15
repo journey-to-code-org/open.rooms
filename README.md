@@ -8,6 +8,8 @@ picked up again after a restart. It is built on [Zubra](https://github.com/journ
 sync layer and plays the games from [open.games](https://github.com/journey-to-code-org/open.games),
 but knows nothing about any particular game.
 
+**Documentation: <https://journey-to-code-org.github.io/open.rooms/>** (the pages are in [`docs/`](docs/README.md)). Coding agents: see [`AGENTS.md`](AGENTS.md) and [`.agents/skills`](.agents/skills).
+
 ## Packages
 
 | Package | What it is |
@@ -29,5 +31,5 @@ npm test
 
 ## History
 
-`rooms` was moved here from open.parlor (formerly Card Room) with its history, and renamed from
-`@spades/rooms`. open.parlor still uses its own copy until it is switched over.
+`rooms` was moved here from a card-game website (formerly Card Room) with its history, and renamed from
+`@spades/rooms`.

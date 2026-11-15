@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="open.rooms: Realtime multiplayer rooms">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0f172a"/><stop offset="1" stop-color="#1e293b"/></linearGradient>
+    <radialGradient id="glow" cx="0.85" cy="0.1" r="0.7"><stop offset="0" stop-color="#fbbf24" stop-opacity="0.35"/><stop offset="1" stop-color="#fbbf24" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <rect x="72" y="72" width="8" height="486" rx="4" fill="#fbbf24"/>
+  <g transform="translate(960 150)" fill="none" stroke="#fbbf24" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" opacity="0.9"><circle cx="72" cy="90" r="44"/><circle cx="72" cy="-6" r="16"/><circle cx="72" cy="186" r="16"/><circle cx="-24" cy="90" r="16"/><circle cx="168" cy="90" r="16"/></g>
+  <text x="120" y="190" font-family="Inter, 'DejaVu Sans', sans-serif" font-size="30" font-weight="600" fill="#fbbf24" letter-spacing="3">JOURNEY-TO-CODE-ORG</text>
+  <text x="120" y="330" font-family="Inter, 'DejaVu Sans', sans-serif" font-size="128" font-weight="800" fill="#f8fafc" letter-spacing="-3">open.rooms</text>
+  <text x="120" y="420" font-family="Inter, 'DejaVu Sans', sans-serif" font-size="40" font-weight="500" fill="#cbd5e1">Realtime multiplayer rooms</text>
+  <text x="120" y="478" font-family="Inter, 'DejaVu Sans', sans-serif" font-size="40" font-weight="500" fill="#cbd5e1">for turn-based games. Seats, private views, bots.</text>
+  <text x="120" y="548" font-family="Inter, 'DejaVu Sans Mono', monospace" font-size="28" fill="#94a3b8">journey-to-code-org.github.io/open.rooms</text>
+</svg>
