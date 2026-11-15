@@ -1,12 +1,17 @@
 {
   "name": "@journey-to-code/rooms",
   "version": "0.1.0",
-  "private": true,
   "description": "Turn-based rooms over @zubra/sync: seats, server-decided moves, private per-seat views, bots and a move log.",
   "type": "module",
   "exports": {
-    "./server": { "types": "./dist/server.d.ts", "default": "./dist/server.js" },
-    "./client": { "types": "./dist/client.d.ts", "default": "./dist/client.js" }
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -20,5 +25,21 @@
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
-  }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/journey-to-code-org/open.rooms.git",
+    "directory": "packages/rooms"
+  },
+  "homepage": "https://github.com/journey-to-code-org/open.rooms#readme",
+  "bugs": {
+    "url": "https://github.com/journey-to-code-org/open.rooms/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ]
 }
