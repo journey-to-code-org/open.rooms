@@ -28,7 +28,7 @@ concurrency:
 env:
   # open.blog's documentation sections are not in a tagged release yet, so the build is pinned to a
   # commit. To update the engine, change this to a newer commit and check the docs still build.
-  OPENBLOG_REF: 85062e16c433f6fb553f5d63ec871ccfa592bcfb
+  OPENBLOG_REF: 1b1a87ab34d61588b2b435ee1694ea647eac3012
 
 jobs:
   build:
