@@ -138,6 +138,8 @@ export interface MoveEvent<State, Move, Summary> {
   room: RoomDoc<Summary>;
   /** The server made this move because the seat's time ran out (see RoomDefinition.deadline). */
   timeout?: boolean;
+  /** The server's admin made this move for the seat, at a paused table (see `moveFor`). */
+  admin?: boolean;
 }
 
 export class RefusedMove extends Error {
@@ -175,6 +177,11 @@ export interface RoomDoc<Summary = unknown> {
   deck?: unknown;
   /** Why the server's admin closed this table. A closed table takes no more seats, moves or chat. */
   closed?: string;
+  /**
+   * Set while the server's admin has paused the game (see `pause`): when (server time, ms) and why.
+   * Nobody can move, no bot plays and no clock runs until it is resumed; chat carries on.
+   */
+  paused?: { at: number; reason: string };
   summary: Summary | null;
   /** The clock that's running, if the game has one (see RoomDefinition.deadline). */
   deadline?: DeadlineDoc | null;
@@ -196,6 +203,8 @@ export interface ChatMessage {
   bot: boolean;
   /** A moderator took the words away; `text` says so instead. */
   removed?: boolean;
+  /** The server's own notice to the table (see `announce`), not a seat's words: `seat` is -1. */
+  notice?: boolean;
 }
 
 /** What a removed chat message says instead. */
@@ -216,13 +225,17 @@ interface GameDoc<Options> {
   seed: number | null;
   /** When the game was dealt (server time, ms): where the first move's clock starts. */
   startedAt?: number;
+  /** Total time the game has spent paused, not counting a pause that is going on (ms). */
+  pausedMs?: number;
+  /** When the pause that is going on began (server time, ms), or null. */
+  pausedAt?: number | null;
   holders: (string | null)[];
 }
 
 interface Armed {
-  /** When time runs out, as pages are told. */
+  /** When time runs out, in game time (the clock less the time spent paused). Pages are told it in server time. */
   at: number;
-  /** When the server makes the move: `at`, plus the deadline's own grace. */
+  /** When the server makes the move: `at`, plus the deadline's own grace. Game time too. */
   fire: number;
   seat: number;
   timer: ReturnType<typeof setTimeout> | null;
@@ -249,12 +262,16 @@ interface Live<State> {
   bot: Turn<State, any> | null;
   /** That bot's pause, while it runs. */
   timer: ReturnType<typeof setTimeout> | null;
-  /** When the last move was decided (or the game dealt): where `elapsed` and `after` count from. */
+  /** When the last move was decided (or the game dealt): where `elapsed` and `after` count from. Game time. */
   last: number;
   /** The settings and seats a deadline may read, kept here so a timer never has to wait for them. */
   table: TableInfo;
   /** The deadline that's armed. Separate from the bot's timer: both can be waiting at once. */
   deadline: Armed | null;
+  /** Time spent paused so far, not counting a pause going on (ms). Game time is the server's clock less this. */
+  paused: number;
+  /** When the pause that's going on began, or null. While it is set nothing moves and no clock runs. */
+  pausedAt: number | null;
 }
 
 /** setTimeout can't wait longer than this (about 24.8 days): a longer deadline wakes and waits again. */
@@ -397,7 +414,7 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
   async function restore(id: string): Promise<Live<State>> {
     const r = await room(id);
     const g = await game(id);
-    const entry: Live<State> = { state: null, moves: 0, version: r?.version ?? 0, bot: null, timer: null, last: Date.now(), table: tableOf(r, g), deadline: null };
+    const entry: Live<State> = { state: null, moves: 0, version: r?.version ?? 0, bot: null, timer: null, last: Date.now(), table: tableOf(r, g), deadline: null, paused: g?.pausedMs ?? 0, pausedAt: g?.pausedAt ?? null };
     if (g?.seed != null) {
       // A game dealt before moves had times starts its clock now, for good: writing it down means
       // every later replay counts from the same moment.
@@ -433,7 +450,10 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
     settings: g?.settings ?? def.settings?.(undefined) ?? null,
     seats: r?.seats ?? [],
   });
-  const deadlineDoc = (entry: Live<State>): DeadlineDoc | null => (entry.deadline ? { at: entry.deadline.at, seat: entry.deadline.seat } : null);
+  /** The game's own clock: the server's, less the time the game has spent paused. It stands still during a pause. */
+  const gameNow = (entry: Live<State>) => (entry.pausedAt ?? Date.now()) - entry.paused;
+  /** The deadline as pages see it, in server time. */
+  const deadlineDoc = (entry: Live<State>): DeadlineDoc | null => (entry.deadline ? { at: entry.deadline.at + entry.paused, seat: entry.deadline.seat } : null);
 
   function disarm(entry: Live<State>) {
     if (entry.deadline?.timer) clearTimeout(entry.deadline.timer);
@@ -446,8 +466,10 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
    * grace period, unless the one it replaces already was. Returns whether there is one now.
    */
   function arm(id: string, entry: Live<State>, sudden = false): boolean {
-    const before = entry.deadline?.at ?? null;
+    const before = entry.deadline ? entry.deadline.at + entry.paused : null;
     disarm(entry);
+    // A paused game has no clock: it is armed again, with the time it had left, when it is resumed.
+    if (entry.pausedAt !== null) return false;
     if (!def.deadline || entry.state === null || def.finished?.(entry.state)) return false;
     let due: Deadline<Move> | null = null;
     try {
@@ -457,17 +479,19 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
     }
     const asked = due ? (due.at ?? (due.after === undefined ? NaN : entry.last + due.after)) : NaN;
     if (!due || !Number.isFinite(asked)) return false;
-    let at = Math.round(asked);
+    // The game asks in game time; the grace and the timers are the server's.
+    let wall = Math.round(asked) + entry.paused;
     // The grace never puts off a deadline that was already armed, or asking twice would be a way to stall.
-    if (sudden) at = Math.max(at, Math.min(Date.now() + grace, before ?? Infinity));
+    if (sudden) wall = Math.max(wall, Math.min(Date.now() + grace, before ?? Infinity));
+    const at = wall - entry.paused;
     const armed: Armed = { at, fire: at + Math.max(0, due.grace ?? 0), seat: due.seat, timer: null };
     const wait = () => {
       armed.timer = setTimeout(() => {
         armed.timer = null;
         if (entry.deadline !== armed) return; // a move got in first
-        if (Date.now() < armed.fire) return wait(); // longer than one timer can sleep, or the timer woke early
+        if (Date.now() < armed.fire + entry.paused) return wait(); // longer than one timer can sleep, or the timer woke early
         timeUp(id, entry, armed);
-      }, Math.min(Math.max(armed.fire - Date.now(), 0), LONGEST_TIMEOUT));
+      }, Math.min(Math.max(armed.fire + entry.paused - Date.now(), 0), LONGEST_TIMEOUT));
     };
     entry.deadline = armed;
     wait();
@@ -481,6 +505,7 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
    */
   function timeUp(id: string, entry: Live<State>, armed: Armed) {
     entry.deadline = null;
+    if (entry.pausedAt !== null) return; // paused: no clock runs
     let applied: { before: State; move: Move } | null = null;
     try {
       const due = entry.state === null ? null : def.deadline!(entry.state, entry.table);
@@ -495,10 +520,10 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
   }
 
   /** After any move: tell everyone, then let the bots and the clock carry on (or put the game away). */
-  async function settle(id: string, entry: Live<State>, before: State, seat: number, move: Move, timeout = false) {
+  async function settle(id: string, entry: Live<State>, before: State, seat: number, move: Move, timeout = false, admin = false) {
     const after = entry.state as State;
     await publish(id, entry);
-    void moved(id, before, after, seat, move, timeout);
+    void moved(id, before, after, seat, move, timeout, admin);
     if (!forgetIfFinished(id, entry)) void driveBots(id);
   }
 
@@ -513,15 +538,30 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
     const r = await room(id);
     const who = r?.seats[seat];
     if (!r || !who) return "No such seat.";
+    return append(id, { seat, name: who.name ?? `Seat ${seat + 1}`, text: clean, at: Date.now(), bot: who.bot });
+  }
+
+  /** Put a message in a room's chat, numbering it after the ones already there. */
+  async function append(id: string, message: ChatMessage): Promise<ChatMessage> {
     if (!chatCount.has(id)) {
       const existing = (await docs).get("chat", id) ?? {};
       chatCount.set(id, Object.keys(existing).filter((k) => /^m\d+$/.test(k)).length);
     }
     const n = chatCount.get(id)!;
     chatCount.set(id, n + 1);
-    const message: ChatMessage = { seat, name: who.name ?? `Seat ${seat + 1}`, text: clean, at: Date.now(), bot: who.bot };
     await sync.write("chat", id, { [`m${String(n).padStart(6, "0")}`]: message });
     return message;
+  }
+
+  /**
+   * A notice from the server to everyone at a table, in the chat ("The host paused the game"). It is not a
+   * seat's message: `seat` is -1, `notice` is true and `name` is `from`. Resolves to the message, or a problem.
+   */
+  async function announce(id: string, text: string, from = "The host"): Promise<ChatMessage | string> {
+    const clean = text.replace(/\s+/g, " ").trim().slice(0, CHAT_LIMIT);
+    if (!clean) return "Say something first.";
+    if (!(await room(id))) return "No such table.";
+    return append(id, { seat: -1, name: from.replace(/\s+/g, " ").trim().slice(0, 40) || "The host", text: clean, at: Date.now(), bot: false, notice: true });
   }
 
   /** Open a new room with these options. Resolves to its id. */
@@ -618,6 +658,8 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
     const entry = await stateOf(id);
     if (entry.state !== null) return null; // two people pressed Deal at once
     const startedAt = Date.now();
+    entry.paused = 0;
+    entry.pausedAt = null;
     entry.state = def.setup(g.options, seed);
     entry.moves = 0;
     entry.last = startedAt;
@@ -658,6 +700,111 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
     if (entry) stopBot(entry);
     live.delete(id);
     return true;
+  }
+
+  /**
+   * Pause a game that's being played (moderation): nobody can move, no bot plays and no clock runs, until
+   * `resume`. Chat carries on, and pages see `paused` on the room. The game's own clock stands still, so
+   * a turn timer or a chess clock has the time left that it had, and `act` sees no time pass. Resolves to
+   * a problem, or null (also when it is paused already).
+   */
+  async function pause(id: string, reason = ""): Promise<string | null> {
+    const g = await game(id);
+    const r = await room(id);
+    if (!g || !r) return "No such table.";
+    if (r.closed) return "That table is closed.";
+    if (!r.started) return "The game hasn't started.";
+    const entry = await stateOf(id);
+    if (entry.state === null || def.finished?.(entry.state)) return "The game is over.";
+    if (entry.pausedAt !== null) return null;
+    // From here to the write there is no await that matters: a move that arrives now finds the table paused.
+    const at = Date.now();
+    entry.pausedAt = at;
+    stopBot(entry);
+    disarm(entry);
+    const why = reason.replace(/\s+/g, " ").trim().slice(0, 200);
+    await sync.write("games", id, { pausedAt: at });
+    await sync.write("rooms", id, { paused: { at, reason: why }, deadline: null });
+    return null;
+  }
+
+  /** Let a paused game go on. Its clocks have the time they had left; the bots play again. Resolves to a problem, or null. */
+  async function resume(id: string): Promise<string | null> {
+    const g = await game(id);
+    const r = await room(id);
+    if (!g || !r) return "No such table.";
+    if (!r.paused && g.pausedAt == null) return "That table isn't paused.";
+    const entry = await stateOf(id);
+    if (entry.pausedAt === null) return "That table isn't paused.";
+    entry.paused += Math.max(0, Date.now() - entry.pausedAt);
+    entry.pausedAt = null;
+    // One write for the game: the time paused and the end of the pause go down together.
+    await sync.write("games", id, { pausedMs: entry.paused, pausedAt: null });
+    arm(id, entry);
+    await sync.write("rooms", id, { paused: null, deadline: deadlineDoc(entry), ...(def.deadline ? { moved: entry.last + entry.paused } : {}) });
+    void driveBots(id);
+    return null;
+  }
+
+  /**
+   * Make a move for a seat at a paused table (moderation): as if the seat had sent it, through `act`,
+   * into the move log (so a restart replays it), and `onMove` is told it was the admin's. The table has
+   * to be paused first, so no bot or clock can move at the same time. Resolves to a problem, or null.
+   */
+  async function moveFor(id: string, seat: number, move: Move): Promise<string | null> {
+    const g = await game(id);
+    const r = await room(id);
+    if (!g || !r) return "No such table.";
+    if (r.closed) return "That table is closed.";
+    if (!Number.isInteger(seat) || seat < 0 || seat >= r.seats.length) return "No such seat.";
+    const entry = await stateOf(id);
+    if (entry.state === null) return "The game hasn't started.";
+    if (entry.pausedAt === null) return "Pause the table first.";
+    let before: State;
+    try {
+      before = apply(id, entry, seat, move, true);
+    } catch (e) {
+      return e instanceof Error ? e.message : "That move isn't allowed.";
+    }
+    const over = def.finished?.(entry.state as State) === true;
+    const heldSince = entry.pausedAt;
+    await settle(id, entry, before, seat, move, false, true);
+    // A game that ended on that move isn't paused any more: there is nothing left to hold.
+    if (over) {
+      await sync.write("games", id, { pausedMs: entry.paused + Math.max(0, Date.now() - heldSince), pausedAt: null });
+      await sync.write("rooms", id, { paused: null });
+    }
+    return null;
+  }
+
+  /**
+   * `moveFor`, with the move the game's own computer player would make for the seat (`bot`, or `think` if
+   * that is what the game has). For a player who has gone, in any game that has bots, with no move to
+   * write by hand. Resolves to a problem, or null; the problem is "That seat has no move to make." when the
+   * bot has none, and "This game has no computer players." when it has no bot.
+   */
+  async function botMoveFor(id: string, seat: number): Promise<string | null> {
+    if (!def.bot && !def.think) return "This game has no computer players.";
+    const g = await game(id);
+    const r = await room(id);
+    if (!g || !r) return "No such table.";
+    if (r.closed) return "That table is closed.";
+    if (!Number.isInteger(seat) || seat < 0 || seat >= r.seats.length) return "No such seat.";
+    const entry = await stateOf(id);
+    if (entry.state === null) return "The game hasn't started.";
+    if (entry.pausedAt === null) return "Pause the table first.";
+    const stop = new AbortController();
+    const state = entry.state;
+    let move: Move | null;
+    try {
+      move = await ask(id, state, seat, r.seats[seat]?.name ?? "", g.settings ?? def.settings?.(undefined), stop);
+    } catch (e) {
+      console.error(`rooms: the bot in ${id} seat ${seat} couldn't think`, e);
+      return "The computer player couldn't find a move.";
+    }
+    if (move === null) return "That seat has no move to make.";
+    if (entry.state !== state) return "The game moved on. Try again.";
+    return moveFor(id, seat, move);
   }
 
   /**
@@ -713,7 +860,7 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
       sync.write("rooms", id, {
         started: entry.state !== null,
         summary: entry.state !== null && def.summary ? def.summary(entry.state) : null,
-        ...(def.deadline ? { deadline, moved: entry.last } : {}),
+        ...(def.deadline ? { deadline, moved: entry.last + entry.paused } : {}),
         version: entry.version,
       }),
     );
@@ -721,9 +868,10 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
   }
 
   /** Apply a move. No await between deciding and recording it, so two moves can't interleave. */
-  function apply(id: string, entry: Live<State>, seat: number, move: Move): State {
+  function apply(id: string, entry: Live<State>, seat: number, move: Move, admin = false): State {
+    if (entry.pausedAt !== null && !admin) throw new RefusedMove("The table is paused.");
     const before = entry.state as State;
-    const at = Math.max(Date.now(), entry.last); // a clock set back never makes a move take less than no time
+    const at = Math.max(gameNow(entry), entry.last); // a clock set back never makes a move take less than no time
     const next = def.act(before, seat, move, { at, elapsed: at - entry.last }); // throws to refuse
     entry.state = next;
     entry.last = at;
@@ -734,10 +882,10 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
     return before;
   }
 
-  async function moved(id: string, before: State, after: State, seat: number, move: Move, timeout = false) {
+  async function moved(id: string, before: State, after: State, seat: number, move: Move, timeout = false, admin = false) {
     if (!options.onMove) return;
     const r = await room(id);
-    if (r) safely(() => options.onMove!({ id, before, after, seat, move, room: r, ...(timeout ? { timeout } : {}) }));
+    if (r) safely(() => options.onMove!({ id, before, after, seat, move, room: r, ...(timeout ? { timeout } : {}), ...(admin ? { admin } : {}) }));
   }
 
   /** Stop the bot that's about to move, whatever it was doing: its pause ends and its answer, if one is still coming, is dropped. */
@@ -761,7 +909,7 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
     const entry = await stateOf(id);
     if ((!def.bot && !def.think) || entry.state === null || entry.bot) return;
     const current = await room(id);
-    if (current?.closed) return;
+    if (current?.closed || current?.paused || entry.pausedAt !== null) return;
     const seats = current?.seats ?? [];
     // A room from before it had settings plays with the defaults.
     const settings = (await game(id))?.settings ?? def.settings?.(undefined);
@@ -828,6 +976,7 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
         }
       }
       entry.bot = null;
+      if (entry.pausedAt !== null) return; // paused while it was thinking: nothing plays
       let before: State;
       try {
         before = apply(id, entry, turn.seat, move as Move);
@@ -968,6 +1117,7 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
     if (action === "act") {
       const entry = await stateOf(id);
       if (entry.state === null) return json({ error: "The game hasn't started." }, 409);
+      if (entry.pausedAt !== null) return json({ error: `The table is paused${r.paused?.reason ? `: ${r.paused.reason}` : "."}` }, 423);
       let before: State;
       try {
         before = apply(id, entry, mySeat, input.move as Move);
@@ -995,6 +1145,7 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
     restored,
     create,
     say,
+    announce,
     seatPlayer,
     seatBot,
     unseat,
@@ -1008,6 +1159,10 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
     nudge: (id: string) => void driveBots(id),
     holders,
     closeTable,
+    pause,
+    resume,
+    moveFor,
+    botMoveFor,
     removePlayer,
     redact,
     /** The public room doc, or undefined. */

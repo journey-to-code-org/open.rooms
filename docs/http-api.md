@@ -29,6 +29,7 @@ The room's documents are served by the sync stream at `syncMount` (default `/_zb
 | 404 | No such table, or an unknown route. |
 | 409 | The seat is taken, the game has started or has not started, or the seats are locked. |
 | 410 | The table was closed; the body says why. |
+| 423 | The game is paused by the server's admin; the body says why. Chat still works. |
 | 429 | Chat faster than about one message every 400 ms. |
 
 Everything except opening a room and reading it needs the seat's cookie. A request with no seat gets `403`.

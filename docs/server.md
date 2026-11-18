@@ -63,12 +63,16 @@ Hooks, all called after the fact, and a throwing hook is logged and never breaks
 | `create(options, settings?)` | Open a room from server code, such as a house opening a table. Resolves to its id. |
 | `start(id)` | Deal. Resolves to a problem, or `null`. |
 | `say(id, seat, text)` | Add a chat message as a seat. Bots speak through this. |
+| `announce(id, text, from?)` | A notice from the server to everyone at a table, in the chat: `seat` is `-1`, `notice` is `true`, and `name` is `from` (default "The host"). Use it to say that an admin paused the game or made a move. |
 | `seatPlayer(id, seat, player, name)`, `seatBot(id, seat, name)` | Seat someone from server code, before the game starts. |
 | `unseat(id, seat)`, `replaceWithBot(id, seat, name)` | Free a seat, or put a bot in it at any point. |
 | `lock(id, label?)` | Fix the seats for good (a tournament match) and name the table. |
 | `exhibit(id, label?)` | Make an all-bot table anyone can watch with every seat's view. |
 | `setDeck(id, deck)` | Set what the cards look like at a table; the app's pages decide what it means. |
 | `closeTable(id, reason)` | Close a table for good. Every later seat, move or message is refused with `reason`. |
+| `pause(id, reason?)`, `resume(id)` | Pause a game that is being played, and let it go on. While it is paused nobody can move, no bot plays and no clock runs. Resolve to a problem, or `null`. See [Pausing](privacy.md#moderation). |
+| `moveFor(id, seat, move)` | Make a move for a seat at a paused table, as the server's admin. It goes through `act` and into the move log; `onMove` gets `admin: true`. Resolves to a problem, or `null`. |
+| `botMoveFor(id, seat)` | `moveFor` with the move the game's own computer player would make for that seat, for a player who has gone, in any game that has bots. Resolves to a problem, or `null`. |
 | `removePlayer(id, seat, bot?)` | Take a person out of a seat. After the deal a bot plays on in their place. |
 | `redact(id, key)` | Take the words out of a chat message. |
 | `holders(id)` | The player ids holding each seat. **Never send these to a page.** |
