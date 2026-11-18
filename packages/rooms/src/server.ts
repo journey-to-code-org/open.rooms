@@ -203,6 +203,8 @@ export interface ChatMessage {
   bot: boolean;
   /** A moderator took the words away; `text` says so instead. */
   removed?: boolean;
+  /** The server's own notice to the table (see `announce`), not a seat's words: `seat` is -1. */
+  notice?: boolean;
 }
 
 /** What a removed chat message says instead. */
@@ -536,15 +538,30 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
     const r = await room(id);
     const who = r?.seats[seat];
     if (!r || !who) return "No such seat.";
+    return append(id, { seat, name: who.name ?? `Seat ${seat + 1}`, text: clean, at: Date.now(), bot: who.bot });
+  }
+
+  /** Put a message in a room's chat, numbering it after the ones already there. */
+  async function append(id: string, message: ChatMessage): Promise<ChatMessage> {
     if (!chatCount.has(id)) {
       const existing = (await docs).get("chat", id) ?? {};
       chatCount.set(id, Object.keys(existing).filter((k) => /^m\d+$/.test(k)).length);
     }
     const n = chatCount.get(id)!;
     chatCount.set(id, n + 1);
-    const message: ChatMessage = { seat, name: who.name ?? `Seat ${seat + 1}`, text: clean, at: Date.now(), bot: who.bot };
     await sync.write("chat", id, { [`m${String(n).padStart(6, "0")}`]: message });
     return message;
+  }
+
+  /**
+   * A notice from the server to everyone at a table, in the chat ("The host paused the game"). It is not a
+   * seat's message: `seat` is -1, `notice` is true and `name` is `from`. Resolves to the message, or a problem.
+   */
+  async function announce(id: string, text: string, from = "The host"): Promise<ChatMessage | string> {
+    const clean = text.replace(/\s+/g, " ").trim().slice(0, CHAT_LIMIT);
+    if (!clean) return "Say something first.";
+    if (!(await room(id))) return "No such table.";
+    return append(id, { seat: -1, name: from.replace(/\s+/g, " ").trim().slice(0, 40) || "The host", text: clean, at: Date.now(), bot: false, notice: true });
   }
 
   /** Open a new room with these options. Resolves to its id. */
@@ -1098,6 +1115,7 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
     restored,
     create,
     say,
+    announce,
     seatPlayer,
     seatBot,
     unseat,

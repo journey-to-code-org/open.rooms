@@ -63,6 +63,7 @@ Hooks, all called after the fact, and a throwing hook is logged and never breaks
 | `create(options, settings?)` | Open a room from server code, such as a house opening a table. Resolves to its id. |
 | `start(id)` | Deal. Resolves to a problem, or `null`. |
 | `say(id, seat, text)` | Add a chat message as a seat. Bots speak through this. |
+| `announce(id, text, from?)` | A notice from the server to everyone at a table, in the chat: `seat` is `-1`, `notice` is `true`, and `name` is `from` (default "The host"). Use it to say that an admin paused the game or made a move. |
 | `seatPlayer(id, seat, player, name)`, `seatBot(id, seat, name)` | Seat someone from server code, before the game starts. |
 | `unseat(id, seat)`, `replaceWithBot(id, seat, name)` | Free a seat, or put a bot in it at any point. |
 | `lock(id, label?)` | Fix the seats for good (a tournament match) and name the table. |

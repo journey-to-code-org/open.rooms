@@ -372,3 +372,23 @@ describe("making a move for a seat", () => {
     expect((await t.info()).summary).toEqual({ total: 16, turn: 0 });
   });
 });
+
+describe("telling the table", () => {
+  it("announces in the chat as the server, not as a seat, and numbers it with the rest", async () => {
+    const t = await threePeople(counting, {}, 0);
+    await t.post(1, "say", { text: "hi" });
+    expect(await t.rooms.announce("room01", "  The host   paused the game.  ")).toMatchObject({ seat: -1, name: "The host", text: "The host paused the game.", notice: true, bot: false });
+    await t.post(2, "say", { text: "ok" });
+    const chat = (await t.rooms.sync.documents()).get("chat", "room01")!;
+    expect(Object.keys(chat).sort()).toEqual(["m000000", "m000001", "m000002"]);
+    expect((chat.m000001 as { notice?: boolean; text: string }).text).toBe("The host paused the game.");
+    expect((chat.m000000 as { notice?: boolean }).notice).toBeUndefined();
+  });
+
+  it("says why it can't: nothing to say, no such table", async () => {
+    const t = await threePeople(counting, {}, 0);
+    expect(await t.rooms.announce("room01", "   ")).toBe("Say something first.");
+    expect(await t.rooms.announce("nope", "hello")).toBe("No such table.");
+    expect(await t.rooms.announce("room01", "x".repeat(500))).toMatchObject({ text: "x".repeat(280) });
+  });
+});
