@@ -778,6 +778,36 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
   }
 
   /**
+   * `moveFor`, with the move the game's own computer player would make for the seat (`bot`, or `think` if
+   * that is what the game has). For a player who has gone, in any game that has bots, with no move to
+   * write by hand. Resolves to a problem, or null; the problem is "That seat has no move to make." when the
+   * bot has none, and "This game has no computer players." when it has no bot.
+   */
+  async function botMoveFor(id: string, seat: number): Promise<string | null> {
+    if (!def.bot && !def.think) return "This game has no computer players.";
+    const g = await game(id);
+    const r = await room(id);
+    if (!g || !r) return "No such table.";
+    if (r.closed) return "That table is closed.";
+    if (!Number.isInteger(seat) || seat < 0 || seat >= r.seats.length) return "No such seat.";
+    const entry = await stateOf(id);
+    if (entry.state === null) return "The game hasn't started.";
+    if (entry.pausedAt === null) return "Pause the table first.";
+    const stop = new AbortController();
+    const state = entry.state;
+    let move: Move | null;
+    try {
+      move = await ask(id, state, seat, r.seats[seat]?.name ?? "", g.settings ?? def.settings?.(undefined), stop);
+    } catch (e) {
+      console.error(`rooms: the bot in ${id} seat ${seat} couldn't think`, e);
+      return "The computer player couldn't find a move.";
+    }
+    if (move === null) return "That seat has no move to make.";
+    if (entry.state !== state) return "The game moved on. Try again.";
+    return moveFor(id, seat, move);
+  }
+
+  /**
    * Take a person out of a seat (moderation). Before the game starts the seat is simply free again;
    * once it has, a bot called `bot` plays the seat on, so the others can finish. Resolves to a
    * problem, or null.
@@ -1132,6 +1162,7 @@ export function createRooms<State, Move, View, Options, Summary = unknown>(
     pause,
     resume,
     moveFor,
+    botMoveFor,
     removePlayer,
     redact,
     /** The public room doc, or undefined. */

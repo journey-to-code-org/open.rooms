@@ -392,3 +392,39 @@ describe("telling the table", () => {
     expect(await t.rooms.announce("room01", "x".repeat(500))).toMatchObject({ text: "x".repeat(280) });
   });
 });
+
+describe("making the computer's move for a seat", () => {
+  it("plays what the game's bot would, for a person's seat, at a paused table", async () => {
+    const seen: (boolean | undefined)[] = [];
+    const t = await threePeople(counting, { onMove: (e) => void seen.push(e.admin) }, 0);
+    expect(await t.rooms.botMoveFor("room01", 0)).toBe("Pause the table first.");
+    await t.rooms.pause("room01", "");
+    expect(await t.rooms.botMoveFor("room01", 1)).toBe("That seat has no move to make.");
+    expect(await t.rooms.botMoveFor("room01", 7)).toBe("No such seat.");
+    expect(await t.rooms.botMoveFor("room01", 0)).toBeNull();
+    expect((await t.info()).summary).toEqual({ total: 10, turn: 1 });
+    expect(await t.moves()).toEqual([{ seat: 0, move: { add: 10 }, at: T0 }]);
+    expect(seen).toEqual([true]);
+  });
+
+  it("says so when the game has no computer players", async () => {
+    const noBots: RoomDefinition<Counting, Add, Counting, { start: number }, Counting> = { ...counting, bot: undefined };
+    const t = await threePeople(noBots, {}, 0);
+    await t.rooms.pause("room01", "");
+    expect(await t.rooms.botMoveFor("room01", 0)).toBe("This game has no computer players.");
+  });
+
+  it("asks a game whose bots think somewhere else, and waits for the answer", async () => {
+    const thinker: RoomDefinition<Counting, Add, Counting, { start: number }, Counting> = {
+      ...counting,
+      bot: undefined,
+      think: (state, seat) => (state.turn === seat ? new Promise((done) => setTimeout(() => done({ add: 3 }), 100)) : null),
+    };
+    const t = await threePeople(thinker, {}, 0);
+    await t.rooms.pause("room01", "");
+    const done = t.rooms.botMoveFor("room01", 0);
+    await pass(100);
+    expect(await done).toBeNull();
+    expect((await t.info()).summary).toEqual({ total: 3, turn: 1 });
+  });
+});
