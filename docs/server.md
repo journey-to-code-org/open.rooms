@@ -69,6 +69,8 @@ Hooks, all called after the fact, and a throwing hook is logged and never breaks
 | `exhibit(id, label?)` | Make an all-bot table anyone can watch with every seat's view. |
 | `setDeck(id, deck)` | Set what the cards look like at a table; the app's pages decide what it means. |
 | `closeTable(id, reason)` | Close a table for good. Every later seat, move or message is refused with `reason`. |
+| `pause(id, reason?)`, `resume(id)` | Pause a game that is being played, and let it go on. While it is paused nobody can move, no bot plays and no clock runs. Resolve to a problem, or `null`. See [Pausing](privacy.md#moderation). |
+| `moveFor(id, seat, move)` | Make a move for a seat at a paused table, as the server's admin. It goes through `act` and into the move log; `onMove` gets `admin: true`. Resolves to a problem, or `null`. |
 | `removePlayer(id, seat, bot?)` | Take a person out of a seat. After the deal a bot plays on in their place. |
 | `redact(id, key)` | Take the words out of a chat message. |
 | `holders(id)` | The player ids holding each seat. **Never send these to a page.** |
