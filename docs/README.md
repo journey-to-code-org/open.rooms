@@ -7,7 +7,7 @@ order: 0
 
 Realtime multiplayer rooms for turn-based games.
 
-A room has seats, takes moves that the server decides, shows each seat a private view of the game, fills empty seats with computer players, and keeps a log of every move so a room can be replayed or picked up again after a restart. It is built on [Zubra](https://github.com/journey-to-code-org/zubra)'s sync layer and plays the games from [open.games](https://github.com/journey-to-code-org/open.games), but knows nothing about any particular game: a room is defined by a handful of functions.
+A room has seats, takes moves that the server decides, shows each seat a private view of the game, fills empty seats with computer players, and keeps a log of every move so a room can be replayed or picked up again after a restart. It is built on [Zubra](https://github.com/zubra-js/zubra)'s sync layer and plays the games from [open.games](https://github.com/journey-to-code-org/open.games), but knows nothing about any particular game: a room is defined by a handful of functions.
 
 One package: `@journey-to-code/rooms`, with a server (`/server`) and a browser client (`/client`).
 

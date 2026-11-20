@@ -1,6 +1,6 @@
 # @journey-to-code/rooms
 
-Turn-based rooms over [`@zubra/sync`](https://github.com/journey-to-code-org/zubra/blob/main/docs/sync.md):
+Turn-based rooms over [`@zubra/sync`](https://github.com/zubra-js/zubra/blob/main/docs/sync.md):
 seats, moves the server decides, a private view per seat, bots, and a move log. Nothing in it is
 about spades; a room is defined by five functions.
 
