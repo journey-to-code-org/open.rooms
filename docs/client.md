@@ -44,13 +44,10 @@ A page never writes a document. Every change, even sitting down, is a request th
 
 ## What the browser loads
 
-Worth knowing if you care about what ships to a page, or about the [TC39 Signals proposal](https://github.com/tc39/proposal-signals), which is at Stage 1 and which its own reference polyfill says not to use in production.
+Worth knowing if you care about what ships to a page.
 
-- **The server does not load it.** `@journey-to-code/rooms/server` imports only `@zubra/sync/server`, and that entry imports no Zubra runtime.
-- **The client does.** `@journey-to-code/rooms/client` imports `@zubra/sync` and `@zubra/sync/connect`. Both reach the main `@zubra/sync` entry (`connect` imports it), and that imports `@zubra/runtime`, whose reactivity is built on the Signals API: the browser's native `Signal` if there is one, otherwise its own independent implementation. The rooms client calls none of it. It uses only the sync store and the connection. Whether a bundler leaves the unused part out depends on your bundler.
-- **Nothing is installed globally.** Loading it does not define `globalThis.Signal`.
-
-If you need a page with no Signals API in it at all, the rooms client cannot be that page until `@zubra/sync` offers an entry that does not load its runtime.
+- **The server does not load the runtime.** `@journey-to-code/rooms/server` imports only `@zubra/sync/server`, and that entry imports no Zubra runtime.
+- **The client does.** `@journey-to-code/rooms/client` imports `@zubra/sync` and `@zubra/sync/connect`. Both reach the main `@zubra/sync` entry (`connect` imports it), and that imports `@zubra/runtime`. Since 6.0 that runtime's reactivity is Zubra's own engine. It does not read a browser `Signal`, and loading it does not define `globalThis.Signal`. The rooms client calls none of the engine. It uses only the sync store and the connection. The engine is imported because `'use collection'` uses it; whether a bundler leaves that unused part out depends on your bundler.
 
 ## Two things learned about Sync
 

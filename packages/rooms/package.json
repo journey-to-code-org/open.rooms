@@ -1,6 +1,6 @@
 {
   "name": "@journey-to-code/rooms",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Turn-based rooms over @zubra/sync: seats, server-decided moves, private per-seat views, bots and a move log.",
   "type": "module",
   "exports": {
@@ -20,7 +20,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@zubra/sync": "^5.15.0"
+    "@zubra/sync": "^6.0.2"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -39,7 +39,7 @@ description: Build the browser side of an open.rooms table. Use when calling cre
 
 ## What the page loads
 
-The client imports `@zubra/sync` and `@zubra/sync/connect`, and both load `@zubra/runtime`, whose reactivity is built on the TC39 Signals API (Stage 1; its reference polyfill says not to use it in production). The rooms client uses none of it, but it is in the dependency graph. The server loads none. If a page must have no Signals API in it, tell the owner this before choosing rooms for it.
+The client imports `@zubra/sync` and `@zubra/sync/connect`, and both load `@zubra/runtime`. Since 6.0 that runtime's reactivity is Zubra's own engine. It does not read a browser `Signal`, and loading it does not define `globalThis.Signal`. The rooms client uses none of the engine, but the import is in the dependency graph. The server loads none.
 
 ## Reference
 

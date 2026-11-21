@@ -19,7 +19,7 @@ Finish a change only when all three pass.
 - **Person-facing errors** are plain sentences shown as they are.
 - **Docs match the code.** When an option, route, status or default changes, change `docs/` in the same PR. Link pages as `file.md` so links work on GitHub and the site.
 - Do not link docs or skills to open.parlor (it is going private).
-- The browser client loads `@zubra/runtime` (built on the Signals API) through `@zubra/sync`. Keep `docs/client.md`'s "What the browser loads" true when the dependency changes.
+- The browser client loads `@zubra/runtime` (Zubra's own reactive engine, since 6.0) through `@zubra/sync`. Keep `docs/client.md`'s "What the browser loads" true when the dependency changes.
 
 ## Releasing
 
